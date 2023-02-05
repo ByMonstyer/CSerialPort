@@ -281,8 +281,15 @@ void CCommMFCDlg::OnBnClickedButtonOpenClose()
 
 		SelStop = m_Stop.GetCurSel();
 
-        m_SerialPort.setReadIntervalTimeout(m_ReceiveTimeoutMS);
-        m_SerialPort.init(portName, SelBaudRate, itas109::Parity(SelParity), itas109::DataBits(SelDataBits), itas109::StopBits(SelStop));
+        m_SerialPort.setReadIntervalTimeout(0);
+        m_SerialPort.init("COM2",              // windows:COM1 Linux:/dev/ttyS0
+                2000000,             // baudrate
+                itas109::ParityNone, // parity
+                itas109::DataBits8,  // data bit
+                itas109::StopOne,    // stop bit
+                itas109::FlowNone,   // flow
+                1024*35                 // read buffer size
+        );
 		m_SerialPort.open();
 
 		if (m_SerialPort.isOpen())
@@ -301,6 +308,37 @@ void CCommMFCDlg::OnBnClickedButtonOpenClose()
 	}
 }
 
+unsigned short CRC16_CCITT_FALSE(unsigned char *puchMsg, unsigned int usDataLen)
+{
+    unsigned short wCRCin = 0xFFFF;
+    unsigned short wCPoly = 0x1021;
+    unsigned char wChar = 0;
+
+    while (usDataLen--)
+    {
+        wChar = *(puchMsg++);
+        wCRCin ^= (wChar << 8);
+
+        for (int i = 0; i < 8; i++)
+        {
+            if (wCRCin & 0x8000)
+            {
+                wCRCin = (wCRCin << 1) ^ wCPoly;
+            }
+            else
+            {
+                wCRCin = wCRCin << 1;
+            }
+        }
+    }
+    return (wCRCin);
+}
+
+unsigned short lengthjj(unsigned int usDataLen)
+{
+    return unsigned short((usDataLen == unsigned short(usDataLen)) ? usDataLen : (usDataLen >> 31) ^ 0x7FFF);
+	 
+} 
 
 void CCommMFCDlg::OnBnClickedButtonSend()
 {
@@ -311,27 +349,49 @@ void CCommMFCDlg::OnBnClickedButtonSend()
 		return;
 	}
 
-	CString temp;
-	m_Send.GetWindowText(temp);
-	int len = 0;
-	char* m_str = NULL;
-#ifdef UNICODE
-	// 兼容中文
-	CStringA strA(temp);
-	len = strA.GetLength();
-	m_str = strA.GetBuffer();
-#else
-	len = temp.GetLength();
-	m_str = temp.GetBuffer(0);
-#endif
+//	CString temp;
+//	m_Send.GetWindowText(temp);
+//	int len = 0;
+//	char* m_str = NULL;
+//#ifdef UNICODE
+//	// 兼容中文
+//	CStringA strA(temp);
+//	len = strA.GetLength();
+//	m_str = strA.GetBuffer();
+//#else
+//	len = temp.GetLength();
+//	m_str = temp.GetBuffer(0);
+//#endif
+//	
+//	m_SerialPort.writeData(m_str, len);
+//
+//	tx += len;
+//
+//	CString str2;
+//	str2.Format(_T("%d"), tx);
+//	m_sendCountCtrl.SetWindowText(str2);
+
+	for (size_t i = 0; i < 1; i++)
+    {
+        std::vector<unsigned char> txt(1024 * 32);
+        std::fill(txt.begin(), txt.end(), 'b'+i);
+
+        txt.insert(txt.begin(), 253);
+        unsigned short length = lengthjj(txt.size() + 2);
+
+        txt.insert(txt.begin() + 1, length >> 8 & 0xff);
+        txt.insert(txt.begin() + 2, length & 0xff);
+       
+
+		unsigned short CRC = CRC16_CCITT_FALSE(txt.data(), txt.size());
+        txt.push_back(CRC >> 8 & 0xff);
+        txt.push_back(CRC & 0xff);
+
+        int count = m_SerialPort.writeData(txt.data(), txt.size());
+        TRACE(_T("\n%d\n"), count);
+        txt.clear();
+    }
 	
-	m_SerialPort.writeData(m_str, len);
-
-	tx += len;
-
-	CString str2;
-	str2.Format(_T("%d"), tx);
-	m_sendCountCtrl.SetWindowText(str2);
 }
 
 
@@ -353,7 +413,7 @@ void CCommMFCDlg::onReadEvent(const char *portName, unsigned int readBufferLen)
 
             if (recLen > 0)
             {
-                data[recLen] = '\0';
+               /* data[recLen] = '\0';
 
                 CString str1(data);
 
@@ -364,7 +424,7 @@ void CCommMFCDlg::onReadEvent(const char *portName, unsigned int readBufferLen)
 
                 CString str2;
                 str2.Format(_T("%d"), rx);
-                m_recvCountCtrl.SetWindowText(str2);
+                m_recvCountCtrl.SetWindowText(str2);*/
             }
 
 			delete[] data;
